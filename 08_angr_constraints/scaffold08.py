@@ -51,16 +51,17 @@ def main(argv):
   path_to_binary = argv[1]
   project = angr.Project(path_to_binary)
 
-  start_address = ???
+  start_address = project.loader.find_symbol('main').rebased_addr + (0x80492dd-0x0804926e)
+  print("start_address",hex(start_address))
   initial_state = project.factory.blank_state(
     addr=start_address,
     add_options = { angr.options.SYMBOL_FILL_UNCONSTRAINED_MEMORY,
                     angr.options.SYMBOL_FILL_UNCONSTRAINED_REGISTERS}
   )
 
-  password = claripy.BVS('password', ???)
+  password = claripy.BVS('password', 17*8)
 
-  password_address = ???
+  password_address = project.loader.find_symbol('buffer').rebased_addr
   initial_state.memory.store(password_address, password)
 
   simulation = project.factory.simgr(initial_state)
@@ -68,8 +69,13 @@ def main(argv):
   # Angr will not be able to reach the point at which the binary prints out
   # 'Good Job.'. We cannot use that as the target anymore.
   # (!)
-  address_to_check_constraint = ???
+  address_to_check_constraint = project.loader.find_symbol('main').rebased_addr + (0x804932e-0x0804926e) # Call the check_equeal function
+  print("address_to_check_constraint",hex(address_to_check_constraint))  
   simulation.explore(find=address_to_check_constraint)
+
+  hardcoded_password = project.loader.find_symbol("password").rebased_addr
+  print(hex(hardcoded_password))
+  print(initial_state.memory.load(hardcoded_password,16))
 
   if simulation.found:
     solution_state = simulation.found[0]
@@ -78,8 +84,8 @@ def main(argv):
     # check_equals_ function. Determine the address that is being passed as the
     # parameter and load it into a bitvector so that we can constrain it.
     # (!)
-    constrained_parameter_address = ???
-    constrained_parameter_size_bytes = ???
+    constrained_parameter_address = project.loader.find_symbol('buffer').rebased_addr
+    constrained_parameter_size_bytes = 16
     constrained_parameter_bitvector = solution_state.memory.load(
       constrained_parameter_address,
       constrained_parameter_size_bytes
@@ -87,8 +93,9 @@ def main(argv):
     # We want to constrain the system to find an input that will make
     # constrained_parameter_bitvector equal the desired value.
     # (!)
-    constrained_parameter_desired_value = ??? # :string (encoded)
-
+    
+    constrained_parameter_desired_value = "PPBVDNMJABAQHZQQ" # :string (encoded)
+    
     # Specify a claripy expression (using Pythonic syntax) that tests whether
     # constrained_parameter_bitvector == constrained_parameter_desired_value.
     # Add the constraint to the state to let z3 attempt to find an input that
@@ -97,7 +104,7 @@ def main(argv):
 
     # Solve for the constrained_parameter_bitvector.
     # (!)
-    solution = ???
+    solution = solution_state.solver.eval(password,cast_to=bytes).decode('ascii')
 
     print(solution)
   else:
